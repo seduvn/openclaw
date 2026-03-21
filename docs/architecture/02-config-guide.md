@@ -728,6 +728,166 @@ Cấu hình cấp thấp hơn override cấu hình cấp cao hơn (shallow merge
 
 ---
 
+### Cấu hình chi tiết Zalo (`channels.zalo`)
+
+Zalo là kênh messaging phổ biến tại Việt Nam, tích hợp qua Zalo Bot API. Plugin Zalo hỗ trợ: DM, gửi ảnh, webhook, multi-account, pairing, proxy.
+
+> **Cài đặt:** `openclaw plugins install @openclaw/zalo`
+
+#### Khả năng (Capabilities)
+
+| Tính năng | Hỗ trợ | Ghi chú |
+|-----------|--------|---------|
+| DM (Direct Message) | Có | Chat type chính |
+| Group chat | Không | Chỉ hỗ trợ DM |
+| Media (ảnh) | Có | Gửi/nhận ảnh |
+| Reactions | Không | Zalo Bot API không hỗ trợ |
+| Threads | Không | - |
+| Polls | Không | - |
+| Block Streaming | Có | Gửi streaming theo block |
+| Native Commands | Không | - |
+
+#### Tham số cấu hình Account
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `name` | `string` | - | Tên hiển thị cho account (CLI/UI) |
+| `enabled` | `boolean` | `true` | Bật/tắt account |
+| `botToken` | `string` | - | Bot token từ Zalo Bot Creator (nhạy cảm) |
+| `tokenFile` | `string` | - | Đường dẫn file chứa bot token |
+| `dmPolicy` | `"pairing" \| "allowlist" \| "open" \| "disabled"` | `"pairing"` | Chính sách DM |
+| `allowFrom` | `Array<string \| number>` | - | Allowlist Zalo user ID |
+| `mediaMaxMb` | `number` | `5` | Kích thước media tối đa (MB) |
+| `proxy` | `string` | - | HTTP/HTTPS proxy URL cho API requests |
+| `responsePrefix` | `string` | - | Prefix cho outbound response |
+| `markdown` | `object` | - | Tùy chỉnh markdown (tables: `"off"` / `"bullets"` / `"code"`) |
+
+**Các giá trị `dmPolicy`:**
+- `"pairing"` (mặc định) - Người lạ nhận mã pairing code, owner approve qua CLI
+- `"allowlist"` - Chỉ cho phép Zalo user ID trong `allowFrom`
+- `"open"` - Cho phép tất cả DM (yêu cầu `allowFrom` chứa `"*"`)
+- `"disabled"` - Bỏ qua tất cả DM
+
+**Biến môi trường:** `ZALO_BOT_TOKEN` — chỉ dùng được cho account mặc định.
+
+#### Webhook
+
+Mặc định dùng long-polling. Chuyển sang webhook cho production:
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `webhookUrl` | `string` | - | URL webhook công khai (HTTPS bắt buộc) |
+| `webhookSecret` | `string` | - | Secret token xác thực (8-256 ký tự) |
+| `webhookPath` | `string` | Lấy từ webhookUrl | Đường dẫn route webhook trên gateway |
+
+**Yêu cầu webhook:**
+- `webhookUrl` phải bắt đầu bằng `https://`
+- `webhookSecret` phải dài 8-256 ký tự
+- Nếu `webhookPath` bỏ trống, tự động lấy từ `webhookUrl`
+
+#### Multi-Account
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `accounts` | `Record<string, AccountConfig>` | - | Cấu hình per-account |
+| `defaultAccount` | `string` | - | Account mặc định |
+
+#### Giới hạn kỹ thuật
+
+| Giới hạn | Giá trị | Ghi chú |
+|----------|---------|---------|
+| Text chunk limit | 2000 ký tự | Tin nhắn dài hơn tự động chia chunk |
+| Media max | 5 MB (mặc định) | Cấu hình qua `mediaMaxMb` |
+| Webhook payload | 1 MB | Body tối đa cho webhook request |
+
+#### Ví dụ cấu hình cơ bản
+
+```json
+{
+  "channels": {
+    "zalo": {
+      "enabled": true,
+      "botToken": "your-zalo-bot-token",
+      "dmPolicy": "pairing"
+    }
+  }
+}
+```
+
+#### Ví dụ cấu hình webhook
+
+```json
+{
+  "channels": {
+    "zalo": {
+      "botToken": "your-zalo-bot-token",
+      "webhookUrl": "https://example.com/zalo-webhook",
+      "webhookSecret": "my-secret-8-chars-min",
+      "webhookPath": "/zalo-webhook"
+    }
+  }
+}
+```
+
+#### Ví dụ multi-account
+
+```json
+{
+  "channels": {
+    "zalo": {
+      "defaultAccount": "main",
+      "accounts": {
+        "main": {
+          "name": "Bot chính",
+          "botToken": "token-1",
+          "dmPolicy": "open",
+          "allowFrom": ["*"]
+        },
+        "support": {
+          "name": "Bot hỗ trợ",
+          "botToken": "token-2",
+          "dmPolicy": "allowlist",
+          "allowFrom": ["123456789"]
+        }
+      }
+    }
+  }
+}
+```
+
+#### Ví dụ cấu hình đầy đủ
+
+```json
+{
+  "channels": {
+    "zalo": {
+      "enabled": true,
+      "botToken": "your-zalo-bot-token",
+      "dmPolicy": "pairing",
+      "allowFrom": [123456789, 987654321],
+      "mediaMaxMb": 10,
+      "proxy": "http://proxy.local:8080",
+      "responsePrefix": "[Bot]",
+      "markdown": { "tables": "code" },
+      "webhookUrl": "https://example.com/zalo-webhook",
+      "webhookSecret": "my-secret-token-here",
+      "webhookPath": "/zalo-webhook"
+    }
+  }
+}
+```
+
+#### Sự kiện Zalo được xử lý
+
+| Event Name | Mô tả |
+|------------|--------|
+| `message.text.received` | Tin nhắn văn bản |
+| `message.image.received` | Tin nhắn ảnh (tải về và xử lý) |
+| `message.sticker.received` | Sticker (chỉ log) |
+| `message.unsupported.received` | Loại tin nhắn chưa hỗ trợ (chỉ log) |
+
+---
+
 ## 7. Session
 
 Cấu hình quản lý phiên làm việc (session).
