@@ -278,16 +278,30 @@ Cấu hình các kênh giao tiếp. Mỗi kênh có cấu hình riêng.
 
 ### Các kênh hỗ trợ
 
+#### Kênh tích hợp (Core)
+
 | Kênh | Key | Thư viện nền tảng |
 |------|-----|-------------------|
-| WhatsApp | `channels.whatsapp` | Baileys |
-| Telegram | `channels.telegram` | grammY |
-| Slack | `channels.slack` | Bolt |
 | Discord | `channels.discord` | discord.js |
-| Signal | `channels.signal` | - |
-| iMessage | `channels.imessage` | BlueBubbles |
-| Microsoft Teams | `channels.msteams` | - |
 | Google Chat | `channels.googlechat` | - |
+| iMessage | `channels.imessage` | BlueBubbles |
+| Signal | `channels.signal` | - |
+| Slack | `channels.slack` | Bolt |
+| Telegram | `channels.telegram` | grammY |
+| WhatsApp | `channels.whatsapp` | Baileys |
+
+#### Kênh mở rộng (Extensions)
+
+| Kênh | Extension | Mô tả |
+|------|-----------|--------|
+| IRC | `extensions/irc` | Internet Relay Chat |
+| Matrix | `extensions/matrix` | Matrix messaging protocol |
+| Microsoft Teams | `extensions/msteams` | Microsoft Teams |
+| Nostr | `extensions/nostr` | Nostr protocol |
+| Tlon/Urbit | `extensions/tlon` | Urbit messaging |
+| Twitch | `extensions/twitch` | Twitch streaming platform |
+| Voice Call | `extensions/voice-call` | Voice call capability |
+| Zalo | `extensions/zalo` | Zalo OA messaging |
 
 ### Ví dụ cấu hình WhatsApp
 
@@ -308,23 +322,409 @@ Cấu hình các kênh giao tiếp. Mỗi kênh có cấu hình riêng.
 }
 ```
 
-### Ví dụ cấu hình Telegram
+### Cấu hình chi tiết Telegram (`channels.telegram`)
+
+Telegram là một trong những kênh giao tiếp chính của OpenClaw, sử dụng thư viện [grammY](https://grammy.dev/) làm nền tảng. Hỗ trợ đầy đủ: DM, group chat, forum topics, inline buttons, reactions, streaming, webhook, multi-account.
+
+#### 6.1 Cài đặt cơ bản (Account Identity)
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `name` | `string` | - | Tên hiển thị cho account (dùng trong CLI/UI) |
+| `enabled` | `boolean` | `true` | Bật/tắt account Telegram này |
+| `botToken` | `string` | - | Bot token từ BotFather (nhạy cảm) |
+| `tokenFile` | `string` | - | Đường dẫn file chứa bot token (symlinks bị từ chối) |
 
 ```json
 {
   "channels": {
     "telegram": {
       "enabled": true,
-      "accounts": [
-        {
-          "id": "main",
-          "botToken": "123456:ABC-..."
-        }
-      ]
+      "botToken": "123456:ABC-DEF..."
     }
   }
 }
 ```
+
+#### 6.2 Chính sách DM và Group
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `dmPolicy` | `"pairing" \| "allowlist" \| "open" \| "disabled"` | `"pairing"` | Chính sách xử lý tin nhắn DM |
+| `groupPolicy` | `"open" \| "disabled" \| "allowlist"` | `"allowlist"` | Chính sách xử lý tin nhắn group |
+| `allowFrom` | `Array<string \| number>` | - | DM allowlist (Telegram user ID hoặc `"*"`) |
+| `groupAllowFrom` | `Array<string \| number>` | - | Group sender allowlist (Telegram user ID) |
+| `defaultTo` | `string \| number` | - | Target mặc định cho CLI `--deliver` |
+
+**Các giá trị `dmPolicy`:**
+- `"pairing"` (mặc định) - Người lạ nhận mã pairing, owner phải approve
+- `"allowlist"` - Chỉ cho phép sender trong `allowFrom`
+- `"open"` - Cho phép tất cả DM (yêu cầu `allowFrom` chứa `"*"`)
+- `"disabled"` - Bỏ qua tất cả DM
+
+**Các giá trị `groupPolicy`:**
+- `"open"` - Cho phép tất cả group, chỉ áp dụng mention-gating
+- `"allowlist"` - Chỉ cho phép group sender trong allowlist
+- `"disabled"` - Chặn tất cả tin nhắn group
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "botToken": "123456:ABC-...",
+      "dmPolicy": "open",
+      "allowFrom": ["*"],
+      "groupPolicy": "allowlist",
+      "groupAllowFrom": [123456789, 987654321]
+    }
+  }
+}
+```
+
+#### 6.3 Webhook
+
+Mặc định Telegram dùng long-polling. Để dùng webhook (hiệu suất cao hơn, phù hợp production):
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `webhookUrl` | `string` | - | URL webhook công khai (HTTPS, phải truy cập được từ internet) |
+| `webhookSecret` | `string` | - | Secret token xác thực webhook |
+| `webhookPath` | `string` | `/telegram-webhook` | Đường dẫn route webhook trên gateway |
+| `webhookHost` | `string` | `127.0.0.1` | Host bind cho webhook listener |
+| `webhookPort` | `number` | `8787` | Port bind cho webhook listener (0 = OS tự chọn) |
+| `webhookCertPath` | `string` | - | Đường dẫn chứng chỉ self-signed (PEM) để upload lên Telegram |
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "botToken": "123456:ABC-...",
+      "webhookUrl": "https://example.com/telegram",
+      "webhookSecret": "my-webhook-secret",
+      "webhookPort": 8443
+    }
+  }
+}
+```
+
+#### 6.4 Streaming và hiển thị
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `streaming` | `"off" \| "partial" \| "block" \| "progress"` | `"off"` | Chế độ stream preview |
+| `blockStreaming` | `boolean` | - | Tắt block streaming cho account này |
+| `blockStreamingCoalesce` | `object` | - | Gộp block reply trước khi gửi |
+| `linkPreview` | `boolean` | `true` | Hiển thị link preview trong tin nhắn |
+| `markdown` | `object` | - | Tùy chỉnh markdown (tables: `"off"` / `"bullets"` / `"code"`) |
+| `textChunkLimit` | `number` | `4000` | Kích thước chunk text tối đa (ký tự) |
+| `chunkMode` | `"length" \| "newline"` | `"length"` | Cách chia chunk: theo kích thước hoặc newline |
+
+**Các giá trị `streaming`:**
+- `"off"` - Không có preview, chờ phản hồi hoàn chỉnh
+- `"partial"` - Edit preview message liên tục (phổ biến nhất)
+- `"block"` - Stream theo block lớn
+- `"progress"` - Alias, tương đương `"partial"` trên Telegram
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "botToken": "...",
+      "streaming": "partial",
+      "textChunkLimit": 4000,
+      "linkPreview": false,
+      "markdown": { "tables": "code" }
+    }
+  }
+}
+```
+
+#### 6.5 Reactions và thông báo
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `reactionLevel` | `"off" \| "ack" \| "minimal" \| "extensive"` | `"ack"` | Mức độ reaction của agent |
+| `reactionNotifications` | `"off" \| "own" \| "all"` | `"off"` | Reaction nào trigger thông báo |
+| `ackReaction` | `string` | - | Emoji ack tùy chỉnh (vd: `"👀"`) |
+| `silentErrorReplies` | `boolean` | `false` | Gửi error reply im lặng (không notification sound) |
+| `responsePrefix` | `string` | - | Prefix cho response (`""` = tắt, `"auto"` = `[{identity.name}]`) |
+
+**Các giá trị `reactionLevel`:**
+- `"off"` - Agent không thể react
+- `"ack"` - Gửi reaction xác nhận (👀 khi đang xử lý)
+- `"minimal"` - React thận trọng (1 per 5-10 exchanges)
+- `"extensive"` - React tự do khi phù hợp
+
+#### 6.6 Cấu hình Group (`groups`)
+
+Mỗi group được cấu hình riêng theo group ID (số âm cho supergroup):
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `requireMention` | `boolean` | - | Yêu cầu @mention để trigger bot |
+| `groupPolicy` | `"open" \| "disabled" \| "allowlist"` | - | Override policy cho group này |
+| `enabled` | `boolean` | `true` | Bật/tắt bot cho group này |
+| `allowFrom` | `Array<string \| number>` | - | Allowlist sender cho group |
+| `systemPrompt` | `string` | - | System prompt bổ sung cho group |
+| `skills` | `string[]` | - | Skills cho group (omit = tất cả, `[]` = không) |
+| `tools` | `object` | - | Tool policy override (allow/deny/alsoAllow) |
+| `toolsBySender` | `Record<string, ToolPolicy>` | - | Tool policy theo sender |
+| `disableAudioPreflight` | `boolean` | - | Bỏ qua transcription voice note cho mention detection |
+| `topics` | `Record<string, TopicConfig>` | - | Cấu hình per-topic (key = message_thread_id) |
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "botToken": "...",
+      "groups": {
+        "-1001234567890": {
+          "requireMention": true,
+          "groupPolicy": "open",
+          "systemPrompt": "You are a helpful coding assistant for this group.",
+          "skills": ["github", "web-search"],
+          "tools": {
+            "deny": ["gateway", "cron"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### 6.7 Cấu hình Topic (Forum)
+
+Mỗi topic trong group/DM có thể cấu hình riêng:
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `agentId` | `string` | - | Route topic tới agent cụ thể |
+| `requireMention` | `boolean` | - | Yêu cầu @mention |
+| `enabled` | `boolean` | `true` | Bật/tắt topic |
+| `allowFrom` | `Array<string \| number>` | - | Sender allowlist |
+| `systemPrompt` | `string` | - | System prompt cho topic |
+| `skills` | `string[]` | - | Skills cho topic |
+| `groupPolicy` | `"open" \| "disabled" \| "allowlist"` | - | Override policy |
+| `disableAudioPreflight` | `boolean` | - | Bỏ qua voice note transcription |
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "botToken": "...",
+      "groups": {
+        "-1001234567890": {
+          "requireMention": true,
+          "topics": {
+            "1": {
+              "agentId": "coder",
+              "systemPrompt": "Focus on code review",
+              "skills": ["github"],
+              "requireMention": false
+            },
+            "42": {
+              "agentId": "writer",
+              "systemPrompt": "Help with documentation",
+              "enabled": true
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### 6.8 Cấu hình DM riêng (`direct`)
+
+Override cấu hình cho DM cụ thể:
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `dmPolicy` | `"pairing" \| "allowlist" \| "open" \| "disabled"` | - | Override DM policy |
+| `tools` | `object` | - | Tool policy override |
+| `toolsBySender` | `Record<string, ToolPolicy>` | - | Per-sender tool policy |
+| `skills` | `string[]` | - | Skills cho DM |
+| `topics` | `Record<string, TopicConfig>` | - | Per-topic config |
+| `enabled` | `boolean` | `true` | Bật/tắt DM |
+| `requireTopic` | `boolean` | - | Yêu cầu message phải từ topic |
+| `allowFrom` | `Array<string \| number>` | - | Sender allowlist |
+| `systemPrompt` | `string` | - | System prompt bổ sung |
+
+#### 6.9 Actions (Tool Gating)
+
+Kiểm soát từng action mà bot có thể thực hiện:
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `actions.reactions` | `boolean` | `true` | Cho phép emoji reactions |
+| `actions.sendMessage` | `boolean` | `true` | Cho phép gửi tin nhắn |
+| `actions.poll` | `boolean` | `true` | Cho phép tạo poll (cần sendMessage=true) |
+| `actions.deleteMessage` | `boolean` | `true` | Cho phép xóa tin nhắn |
+| `actions.editMessage` | `boolean` | `true` | Cho phép sửa tin nhắn |
+| `actions.sticker` | `boolean` | `true` | Cho phép sticker |
+| `actions.createForumTopic` | `boolean` | `true` | Cho phép tạo forum topic |
+| `actions.editForumTopic` | `boolean` | `true` | Cho phép sửa forum topic |
+
+#### 6.10 Exec Approvals (Telegram-native)
+
+Cho phép approve lệnh exec qua Telegram:
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `execApprovals.enabled` | `boolean` | `false` | Bật exec approval qua Telegram |
+| `execApprovals.approvers` | `Array<string \| number>` | - | User ID được phép approve (bắt buộc nếu enabled) |
+| `execApprovals.agentFilter` | `string[]` | - | Chỉ forward approval cho agent IDs này |
+| `execApprovals.sessionFilter` | `string[]` | - | Lọc theo session key pattern |
+| `execApprovals.target` | `"dm" \| "channel" \| "both"` | `"dm"` | Nơi gửi approval prompt |
+
+#### 6.11 Network và Retry
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `timeoutSeconds` | `number` | - | Timeout cho Telegram API client (giây) |
+| `proxy` | `string` | - | HTTP/HTTPS proxy URL |
+| `mediaMaxMb` | `number` | - | Kích thước media tối đa (MB) |
+| `retry.attempts` | `number` | `3` | Số lần retry tối đa |
+| `retry.minDelayMs` | `number` | ~400 | Delay tối thiểu giữa retry (ms) |
+| `retry.maxDelayMs` | `number` | `30000` | Delay tối đa (ms) |
+| `retry.jitter` | `number` | `0.1` | Jitter factor (0-1) |
+| `network.autoSelectFamily` | `boolean` | - | Override Node autoSelectFamily |
+| `network.dnsResultOrder` | `"ipv4first" \| "verbatim"` | `"ipv4first"` | Thứ tự DNS resolution |
+
+#### 6.12 Thread Bindings
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `threadBindings.enabled` | `boolean` | - | Bật thread-bound session routing |
+| `threadBindings.idleHours` | `number` | - | Giờ idle trước khi binding hết hạn |
+| `threadBindings.maxAgeHours` | `number` | - | Tuổi tối đa của binding (giờ) |
+| `threadBindings.spawnSubagentSessions` | `boolean` | - | Cho phép spawn subagent trong thread |
+| `threadBindings.spawnAcpSessions` | `boolean` | - | Cho phép spawn ACP sessions trong thread |
+
+#### 6.13 Health Monitoring
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `heartbeat.showOk` | `boolean` | `false` | Hiển thị HEARTBEAT_OK trong chat |
+| `heartbeat.showAlerts` | `boolean` | `true` | Hiển thị heartbeat alerts |
+| `heartbeat.useIndicator` | `boolean` | `true` | Emit indicator events cho UI |
+| `healthMonitor.enabled` | `boolean` | - | Bật channel-health-monitor restarts |
+
+#### 6.14 Multi-Account
+
+Hỗ trợ nhiều bot token trên cùng gateway:
+
+| Tham số | Kiểu | Mặc định | Mô tả |
+|---------|------|----------|--------|
+| `accounts` | `Record<string, AccountConfig>` | - | Cấu hình per-account |
+| `defaultAccount` | `string` | - | Account mặc định khi có nhiều account |
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "defaultAccount": "main",
+      "accounts": {
+        "main": {
+          "name": "Production Bot",
+          "botToken": "111:AAA...",
+          "dmPolicy": "open",
+          "allowFrom": ["*"]
+        },
+        "dev": {
+          "name": "Dev Bot",
+          "botToken": "222:BBB...",
+          "dmPolicy": "allowlist",
+          "allowFrom": [123456789]
+        }
+      }
+    }
+  }
+}
+```
+
+#### 6.15 Ví dụ cấu hình Telegram đầy đủ
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "botToken": "123456:ABC-DEF...",
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist",
+      "streaming": "partial",
+      "textChunkLimit": 4000,
+      "linkPreview": false,
+      "reactionLevel": "ack",
+      "reactionNotifications": "own",
+      "silentErrorReplies": false,
+      "configWrites": true,
+      "timeoutSeconds": 30,
+      "retry": {
+        "attempts": 3,
+        "maxDelayMs": 30000
+      },
+      "actions": {
+        "reactions": true,
+        "sendMessage": true,
+        "poll": true,
+        "sticker": true,
+        "createForumTopic": true
+      },
+      "groups": {
+        "-1001234567890": {
+          "requireMention": true,
+          "groupPolicy": "open",
+          "systemPrompt": "You are a coding assistant.",
+          "skills": ["github"],
+          "topics": {
+            "1": {
+              "agentId": "coder",
+              "requireMention": false
+            }
+          }
+        }
+      },
+      "execApprovals": {
+        "enabled": true,
+        "approvers": [123456789],
+        "target": "dm"
+      },
+      "threadBindings": {
+        "enabled": true,
+        "idleHours": 24,
+        "maxAgeHours": 168
+      },
+      "heartbeat": {
+        "showOk": false,
+        "showAlerts": true
+      }
+    }
+  }
+}
+```
+
+#### 6.16 Thứ tự kế thừa cấu hình (Inheritance)
+
+```
+Top-level settings (channels.telegram.*)
+    │
+    ├── Account settings (accounts.<id>.*)
+    │       │
+    │       ├── Group settings (groups.<group_id>.*)
+    │       │       │
+    │       │       └── Topic settings (topics.<thread_id>.*)
+    │       │
+    │       └── Direct/DM settings (direct.<chat_id>.*)
+    │               │
+    │               └── DM Topic settings (topics.<thread_id>.*)
+    │
+    └── Per-DM legacy (dms.<user_id>.*)
+```
+
+Cấu hình cấp thấp hơn override cấu hình cấp cao hơn (shallow merge).
 
 ---
 
