@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const ROOT = process.cwd();
 const DOCS_DIR = path.join(ROOT, "docs");
@@ -42,14 +45,16 @@ function normalizeSlashes(p) {
 }
 
 /** @param {string} p */
-function normalizeRoute(p) {
-  const stripped = p.replace(/^\/+|\/+$/g, "");
+export function normalizeRoute(p) {
+  const [withoutFragment] = p.split("#");
+  const [withoutQuery] = withoutFragment.split("?");
+  const stripped = withoutQuery.replace(/^\/+|\/+$/g, "");
   return stripped ? `/${stripped}` : "/";
 }
 
 /** @param {string} text */
-function stripCodeFences(text) {
-  return text.replace(/```[\s\S]*?```/g, "");
+function stripInlineCode(text) {
+  return text.replace(/`[^`]+`/g, "");
 }
 
 const docsConfig = JSON.parse(fs.readFileSync(DOCS_JSON_PATH, "utf8"));
@@ -63,18 +68,33 @@ for (const item of docsConfig.redirects || []) {
 const allFiles = walk(DOCS_DIR);
 const relAllFiles = new Set(allFiles.map((abs) => normalizeSlashes(path.relative(DOCS_DIR, abs))));
 
-const markdownFiles = allFiles.filter((abs) => /\.(md|mdx)$/i.test(abs));
+function isLocalizedDocPath(p) {
+  return /^\/?[a-z]{2}(?:-[A-Za-z]{2,8})+\//.test(p);
+}
+
+function isGeneratedTranslatedDoc(relPath) {
+  return isLocalizedDocPath(relPath);
+}
+
+const markdownFiles = allFiles.filter((abs) => {
+  if (!/\.(md|mdx)$/i.test(abs)) {
+    return false;
+  }
+  const rel = normalizeSlashes(path.relative(DOCS_DIR, abs));
+  return !isGeneratedTranslatedDoc(rel);
+});
 const routes = new Set();
 
 for (const abs of markdownFiles) {
   const rel = normalizeSlashes(path.relative(DOCS_DIR, abs));
+  const text = fs.readFileSync(abs, "utf8");
   const slug = rel.replace(/\.(md|mdx)$/i, "");
-  routes.add(normalizeRoute(slug));
+  const route = normalizeRoute(slug);
+  routes.add(route);
   if (slug.endsWith("/index")) {
     routes.add(normalizeRoute(slug.slice(0, -"/index".length)));
   }
 
-  const text = fs.readFileSync(abs, "utf8");
   if (!text.startsWith("---")) {
     continue;
   }
@@ -94,114 +114,330 @@ for (const abs of markdownFiles) {
   routes.add(normalizeRoute(permalink));
 }
 
-/** @param {string} route */
-function resolveRoute(route) {
+/**
+ * @param {string} route
+ * @param {{redirects?: Map<string, string>, routes?: Set<string>}} [options]
+ */
+export function resolveRoute(route, options = {}) {
+  const redirectMap = options.redirects ?? redirects;
+  const publishedRoutes = options.routes ?? routes;
   let current = normalizeRoute(route);
   if (current === "/") {
     return { ok: true, terminal: "/" };
   }
 
   const seen = new Set([current]);
-  while (redirects.has(current)) {
-    current = redirects.get(current);
+  while (redirectMap.has(current)) {
+    current = normalizeRoute(redirectMap.get(current));
     if (seen.has(current)) {
       return { ok: false, terminal: current, loop: true };
     }
     seen.add(current);
   }
-  return { ok: routes.has(current), terminal: current };
+  return { ok: publishedRoutes.has(current), terminal: current };
+}
+
+/** @param {unknown} node */
+function collectNavPageEntries(node) {
+  /** @type {string[]} */
+  const entries = [];
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      entries.push(...collectNavPageEntries(item));
+    }
+    return entries;
+  }
+
+  if (!node || typeof node !== "object") {
+    return entries;
+  }
+
+  const record = /** @type {Record<string, unknown>} */ (node);
+  if (Array.isArray(record.pages)) {
+    for (const page of record.pages) {
+      if (typeof page === "string") {
+        entries.push(page);
+      } else {
+        entries.push(...collectNavPageEntries(page));
+      }
+    }
+  }
+
+  for (const value of Object.values(record)) {
+    if (value !== record.pages) {
+      entries.push(...collectNavPageEntries(value));
+    }
+  }
+
+  return entries;
 }
 
 const markdownLinkRegex = /!?\[[^\]]*\]\(([^)]+)\)/g;
 
-/** @type {{file: string; link: string; reason: string}[]} */
-const broken = [];
-let checked = 0;
+export function sanitizeDocsConfigForEnglishOnly(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeDocsConfigForEnglishOnly(item))
+      .filter((item) => item !== undefined);
+  }
 
-for (const abs of markdownFiles) {
-  const rel = normalizeSlashes(path.relative(DOCS_DIR, abs));
-  const baseDir = normalizeSlashes(path.dirname(rel));
-  const text = stripCodeFences(fs.readFileSync(abs, "utf8"));
+  if (!value || typeof value !== "object") {
+    if (typeof value === "string" && isLocalizedDocPath(value)) {
+      return undefined;
+    }
+    return value;
+  }
 
-  for (const match of text.matchAll(markdownLinkRegex)) {
-    const raw = match[1]?.trim();
-    if (!raw) {
+  const record = /** @type {Record<string, unknown>} */ (value);
+  if (typeof record.language === "string" && record.language !== "en") {
+    return undefined;
+  }
+
+  /** @type {Record<string, unknown>} */
+  const sanitized = {};
+  for (const [key, child] of Object.entries(record)) {
+    const next = sanitizeDocsConfigForEnglishOnly(child);
+    if (next === undefined) {
       continue;
     }
-    if (/^(https?:|mailto:|tel:|data:|#)/i.test(raw)) {
+    if (Array.isArray(next) && next.length === 0) {
       continue;
     }
+    if (
+      next &&
+      typeof next === "object" &&
+      !Array.isArray(next) &&
+      Object.keys(next).length === 0
+    ) {
+      continue;
+    }
+    sanitized[key] = next;
+  }
 
-    const clean = raw.split("#")[0].split("?")[0];
-    if (!clean) {
+  if (record.pages && !Array.isArray(sanitized.pages)) {
+    return undefined;
+  }
+  if (record.groups && !Array.isArray(sanitized.groups)) {
+    return undefined;
+  }
+  if (record.tabs && !Array.isArray(sanitized.tabs)) {
+    return undefined;
+  }
+  if (
+    "source" in record &&
+    typeof record.source === "string" &&
+    typeof sanitized.source !== "string"
+  ) {
+    return undefined;
+  }
+  if (
+    "destination" in record &&
+    typeof record.destination === "string" &&
+    typeof sanitized.destination !== "string"
+  ) {
+    return undefined;
+  }
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}
+
+export function prepareAnchorAuditDocsDir(sourceDir = DOCS_DIR) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-docs-anchor-audit-"));
+  fs.cpSync(sourceDir, tempDir, { recursive: true });
+
+  for (const entry of fs.readdirSync(tempDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    if (!isGeneratedTranslatedDoc(`${entry.name}/`)) {
+      continue;
+    }
+    fs.rmSync(path.join(tempDir, entry.name), { recursive: true, force: true });
+  }
+
+  const docsJsonPath = path.join(tempDir, "docs.json");
+  const docsConfig = JSON.parse(fs.readFileSync(docsJsonPath, "utf8"));
+  const sanitized = sanitizeDocsConfigForEnglishOnly(docsConfig);
+  fs.writeFileSync(docsJsonPath, `${JSON.stringify(sanitized, null, 2)}\n`, "utf8");
+
+  return tempDir;
+}
+
+export function auditDocsLinks() {
+  /** @type {{file: string; line: number; link: string; reason: string}[]} */
+  const broken = [];
+  let checked = 0;
+
+  for (const abs of markdownFiles) {
+    const rel = normalizeSlashes(path.relative(DOCS_DIR, abs));
+    const baseDir = normalizeSlashes(path.dirname(rel));
+    const rawText = fs.readFileSync(abs, "utf8");
+    const lines = rawText.split("\n");
+
+    let inCodeFence = false;
+
+    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+      let line = lines[lineNum];
+
+      if (line.trim().startsWith("```")) {
+        inCodeFence = !inCodeFence;
+        continue;
+      }
+      if (inCodeFence) {
+        continue;
+      }
+
+      line = stripInlineCode(line);
+
+      for (const match of line.matchAll(markdownLinkRegex)) {
+        const raw = match[1]?.trim();
+        if (!raw) {
+          continue;
+        }
+        if (/^(https?:|mailto:|tel:|data:|#)/i.test(raw)) {
+          continue;
+        }
+
+        const [pathPart] = raw.split("#");
+        const clean = pathPart.split("?")[0];
+        if (!clean) {
+          continue;
+        }
+        checked++;
+
+        if (clean.startsWith("/")) {
+          const route = normalizeRoute(clean);
+          const resolvedRoute = resolveRoute(route);
+          if (!resolvedRoute.ok) {
+            const staticRel = route.replace(/^\//, "");
+            if (!relAllFiles.has(staticRel)) {
+              broken.push({
+                file: rel,
+                line: lineNum + 1,
+                link: raw,
+                reason: `route/file not found (terminal: ${resolvedRoute.terminal})`,
+              });
+              continue;
+            }
+          }
+          continue;
+        }
+
+        if (!clean.startsWith(".") && !clean.includes("/")) {
+          continue;
+        }
+
+        const normalizedRel = normalizeSlashes(path.normalize(path.join(baseDir, clean)));
+
+        if (/\.[a-zA-Z0-9]+$/.test(normalizedRel)) {
+          if (!relAllFiles.has(normalizedRel)) {
+            broken.push({
+              file: rel,
+              line: lineNum + 1,
+              link: raw,
+              reason: "relative file not found",
+            });
+          }
+          continue;
+        }
+
+        const candidates = [
+          normalizedRel,
+          `${normalizedRel}.md`,
+          `${normalizedRel}.mdx`,
+          `${normalizedRel}/index.md`,
+          `${normalizedRel}/index.mdx`,
+        ];
+
+        if (!candidates.some((candidate) => relAllFiles.has(candidate))) {
+          broken.push({
+            file: rel,
+            line: lineNum + 1,
+            link: raw,
+            reason: "relative doc target not found",
+          });
+        }
+      }
+    }
+  }
+
+  for (const page of collectNavPageEntries(docsConfig.navigation || [])) {
+    if (isGeneratedTranslatedDoc(String(page))) {
       continue;
     }
     checked++;
+    const route = normalizeRoute(page);
+    const resolvedRoute = resolveRoute(route);
+    if (resolvedRoute.ok) {
+      continue;
+    }
 
-    if (clean.startsWith("/")) {
-      const route = normalizeRoute(clean);
-      const resolvedRoute = resolveRoute(route);
-      if (resolvedRoute.ok) {
-        continue;
-      }
+    broken.push({
+      file: "docs.json",
+      line: 0,
+      link: page,
+      reason: `navigation page not published (terminal: ${resolvedRoute.terminal})`,
+    });
+  }
 
-      const staticRel = route.replace(/^\//, "");
-      if (relAllFiles.has(staticRel)) {
-        continue;
-      }
+  return { checked, broken };
+}
 
-      broken.push({
-        file: rel,
-        link: raw,
-        reason: `route/file not found (terminal: ${resolvedRoute.terminal})`,
+/**
+ * @param {{
+ *   args?: string[];
+ *   spawnSyncImpl?: typeof spawnSync;
+ *   prepareAnchorAuditDocsDirImpl?: (sourceDir?: string) => string;
+ *   cleanupAnchorAuditDocsDirImpl?: (dir: string) => void;
+ * }} [options]
+ */
+export function runDocsLinkAuditCli(options = {}) {
+  const args = options.args ?? process.argv.slice(2);
+  if (args.includes("--anchors")) {
+    const spawnSyncImpl = options.spawnSyncImpl ?? spawnSync;
+    const prepareAnchorAuditDocsDirImpl =
+      options.prepareAnchorAuditDocsDirImpl ?? prepareAnchorAuditDocsDir;
+    const cleanupAnchorAuditDocsDirImpl =
+      options.cleanupAnchorAuditDocsDirImpl ??
+      ((dir) => fs.rmSync(dir, { recursive: true, force: true }));
+    const anchorDocsDir = prepareAnchorAuditDocsDirImpl(DOCS_DIR);
+
+    try {
+      const result = spawnSyncImpl("mint", ["broken-links", "--check-anchors"], {
+        cwd: anchorDocsDir,
+        stdio: "inherit",
       });
-      continue;
-    }
 
-    // Relative placeholder strings used in code examples (for example "url")
-    // are intentionally skipped.
-    if (!clean.startsWith(".") && !clean.includes("/")) {
-      continue;
-    }
-
-    const normalizedRel = normalizeSlashes(path.normalize(path.join(baseDir, clean)));
-
-    if (/\.[a-zA-Z0-9]+$/.test(normalizedRel)) {
-      if (!relAllFiles.has(normalizedRel)) {
-        broken.push({
-          file: rel,
-          link: raw,
-          reason: "relative file not found",
+      if (result.error?.code === "ENOENT") {
+        const fallback = spawnSyncImpl("pnpm", ["dlx", "mint", "broken-links", "--check-anchors"], {
+          cwd: anchorDocsDir,
+          stdio: "inherit",
         });
+        return fallback.status ?? 1;
       }
-      continue;
-    }
 
-    const candidates = [
-      normalizedRel,
-      `${normalizedRel}.md`,
-      `${normalizedRel}.mdx`,
-      `${normalizedRel}/index.md`,
-      `${normalizedRel}/index.mdx`,
-    ];
-
-    if (!candidates.some((candidate) => relAllFiles.has(candidate))) {
-      broken.push({
-        file: rel,
-        link: raw,
-        reason: "relative doc target not found",
-      });
+      return result.status ?? 1;
+    } finally {
+      cleanupAnchorAuditDocsDirImpl(anchorDocsDir);
     }
   }
+
+  const { checked, broken } = auditDocsLinks();
+  console.log(`checked_internal_links=${checked}`);
+  console.log(`broken_links=${broken.length}`);
+
+  for (const item of broken) {
+    console.log(`${item.file}:${item.line} :: ${item.link} :: ${item.reason}`);
+  }
+
+  return broken.length > 0 ? 1 : 0;
 }
 
-console.log(`checked_internal_links=${checked}`);
-console.log(`broken_links=${broken.length}`);
-
-for (const item of broken) {
-  console.log(`${item.file} :: ${item.link} :: ${item.reason}`);
+function isCliEntry() {
+  const cliArg = process.argv[1];
+  return cliArg ? import.meta.url === pathToFileURL(cliArg).href : false;
 }
 
-if (broken.length > 0) {
-  process.exit(1);
+if (isCliEntry()) {
+  process.exit(runDocsLinkAuditCli());
 }
