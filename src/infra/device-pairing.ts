@@ -184,6 +184,10 @@ function mergePendingDevicePairingRequest(
   const incomingRole = normalizeRole(incoming.role);
   return {
     ...existing,
+    // Always use the latest connecting device's publicKey so that a device that
+    // rotates its key (e.g. a webchat client after a browser refresh) is approved
+    // with the key it will actually present on reconnect.
+    publicKey: incoming.publicKey,
     displayName: incoming.displayName ?? existing.displayName,
     platform: incoming.platform ?? existing.platform,
     deviceFamily: incoming.deviceFamily ?? existing.deviceFamily,

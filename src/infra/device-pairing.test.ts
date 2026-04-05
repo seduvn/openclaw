@@ -124,6 +124,42 @@ describe("device pairing tokens", () => {
     expect(second.request.requestId).toBe(first.request.requestId);
   });
 
+  test("updates publicKey when device reconnects with a new key before approval", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "openclaw-device-pairing-"));
+    // First connection: pending request created with key-1
+    const first = await requestDevicePairing(
+      {
+        deviceId: "device-1",
+        publicKey: "public-key-1",
+        role: "operator",
+        scopes: ["operator.admin"],
+      },
+      baseDir,
+    );
+    expect(first.created).toBe(true);
+    expect(first.request.publicKey).toBe("public-key-1");
+
+    // Device rotates its key (e.g. webchat after browser refresh) before approval
+    const second = await requestDevicePairing(
+      {
+        deviceId: "device-1",
+        publicKey: "public-key-2",
+        role: "operator",
+        scopes: ["operator.admin"],
+      },
+      baseDir,
+    );
+    // Same pending request, but publicKey updated to the latest one
+    expect(second.created).toBe(false);
+    expect(second.request.requestId).toBe(first.request.requestId);
+    expect(second.request.publicKey).toBe("public-key-2");
+
+    // Approve: pairing record must store the latest key so the device can connect
+    await approveDevicePairing(first.request.requestId, baseDir);
+    const paired = await getPairedDevice("device-1", baseDir);
+    expect(paired?.publicKey).toBe("public-key-2");
+  });
+
   test("merges pending roles/scopes for the same device before approval", async () => {
     const baseDir = await mkdtemp(join(tmpdir(), "openclaw-device-pairing-"));
     const first = await requestDevicePairing(
