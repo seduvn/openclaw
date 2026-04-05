@@ -6,43 +6,41 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          OpenClaw System                                    │
 │                                                                             │
-│  ┌──────────┐    ┌──────────────────┐    ┌──────────────────────────────┐   │
-│  │  CLI      │───▶│  Gateway Server  │◀───│  Channels (External)        │   │
-│  │ (entry.ts)│    │  (WebSocket)     │    │  WhatsApp │ Telegram        │   │
-│  └──────────┘    │  ws://127.0.0.1  │    │  Slack    │ Discord         │   │
-│                  │  :18789          │    │  Signal   │ iMessage        │   │
-│                  └────────┬─────────┘    │  MS Teams │ Google Chat     │   │
-│                           │              └──────────────────────────────┘   │
-│                           │                                                 │
-│              ┌────────────▼────────────┐                                    │
-│              │    Message Router        │                                    │
-│              │  (routing/session-key)   │                                    │
-│              └────────────┬────────────┘                                    │
-│                           │                                                 │
-│         ┌─────────────────▼──────────────────┐                              │
-│         │          Agent System               │                              │
-│         │                                     │                              │
-│         │  ┌───────────┐   ┌──────────────┐  │                              │
-│         │  │ Main Agent │   │ Sub-Agents   │  │                              │
-│         │  │ (default)  │──▶│ (spawned)    │  │                              │
-│         │  └─────┬──────┘   └──────────────┘  │                              │
-│         │        │                            │                              │
-│         │  ┌─────▼──────────────────────┐     │                              │
-│         │  │  Pi Embedded Runner         │     │                              │
-│         │  │  (LLM API call + tools)     │     │                              │
-│         │  └─────┬──────────────────────┘     │                              │
-│         │        │                            │                              │
-│         │  ┌─────▼──────┐ ┌──────────────┐   │                              │
-│         │  │ Tool System │ │ Skills System│   │                              │
-│         │  │ (pi-tools)  │ │ (SKILL.md)   │   │                              │
-│         │  └─────────────┘ └──────────────┘   │                              │
-│         └────────────────────────────────────┘                              │
-│                                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │ Config System │  │ Session Store│  │ Memory System│  │ Plugin System│    │
-│  │ (openclaw.json)│ │ (JSON files) │  │ (builtin/qmd)│  │ (plugins/)   │    │
-│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-└─────────────────────────────────────────────────────────────────────────────┘
+│  ┌───────────┐   ┌──────────────────┐   ┌──────────────────────────────┐  │
+│  │   CLI      │──▶│  Gateway Server  │◀──│  Channels (31 extensions)    │  │
+│  │ (entry.ts) │   │  (WebSocket+TLS) │   │  Discord  │ Telegram        │  │
+│  └───────────┘   │  :18789          │   │  Slack    │ WhatsApp        │  │
+│                  │                  │   │  Signal   │ iMessage        │  │
+│  ┌───────────┐   │  HTTP Endpoints:  │   │  Matrix   │ Zalo            │  │
+│  │  Web UI   │──▶│  /v1/chat/compl.  │   │  Twitch   │ Nostr           │  │
+│  │ (ctrl UI) │   │  /v1/responses    │   │  Tlon     │ Line  ...       │  │
+│  └───────────┘   └────────┬─────────┘   └──────────────────────────────┘  │
+│                           │                                                │
+│  ┌───────────┐   ┌───────▼────────┐   ┌──────────────────────────────┐    │
+│  │  ACP      │──▶│ Message Router │──▶│         Agent System          │    │
+│  │ (Agent    │   │ (routing/      │   │                               │    │
+│  │  Control  │   │  session-key)  │   │  ┌──────────┐ ┌───────────┐  │    │
+│  │  Protocol)│   └────────────────┘   │  │Main Agent│▶│Sub-Agents │  │    │
+│  └───────────┘                        │  └────┬─────┘ └───────────┘  │    │
+│                                       │       │                      │    │
+│  ┌───────────┐                        │  ┌────▼──────────────────┐   │    │
+│  │  Apps     │                        │  │  Pi Embedded Runner   │   │    │
+│  │ iOS/macOS │                        │  │  (LLM API + tools)    │   │    │
+│  │ Android   │                        │  └────┬──────────────────┘   │    │
+│  └───────────┘                        │       │                      │    │
+│                                       │  ┌────▼─────┐ ┌──────────┐  │    │
+│                                       │  │Tool Sys. │ │Skills(53)│  │    │
+│                                       │  │(pi-tools)│ │(SKILL.md)│  │    │
+│                                       │  └──────────┘ └──────────┘  │    │
+│                                       └──────────────────────────────┘    │
+│                                                                           │
+│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐  │
+│  │  Config   │ │  Session  │ │  Memory   │ │  Plugin   │ │Extensions │  │
+│  │ (openclaw │ │  Store    │ │  System   │ │  System   │ │  (31)     │  │
+│  │  .json)   │ │           │ │(builtin/  │ │(plugin-sdk│ │(channels, │  │
+│  │ 32 keys   │ │           │ │  qmd)     │ │ registry) │ │ providers)│  │
+│  └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘  │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 2. Luồng khởi động ứng dụng (Application Startup Flow)
@@ -341,41 +339,52 @@ Incoming Message (from Channel)
 ## 8. Hệ thống Channel (Kênh giao tiếp)
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                    Channel System                           │
-│                  (src/channels/)                            │
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ WhatsApp │  │ Telegram │  │  Slack   │  │ Discord  │   │
-│  │ (Baileys)│  │ (grammY) │  │ (Bolt)   │  │(discord.js)│  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
-│       │              │              │              │         │
-│  ┌────┴─────┐  ┌────┴─────┐  ┌────┴─────┐  ┌────┴─────┐   │
-│  │ Signal   │  │ iMessage │  │ MS Teams │  │ Google   │   │
-│  │          │  │(BlueBubb)│  │          │  │ Chat     │   │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
-│       │              │              │              │         │
-│       └──────────────┴──────┬───────┴──────────────┘         │
-│                             │                                │
-│                    ┌────────▼────────┐                        │
-│                    │ Channel Adapter │                        │
-│                    │ (Unified API)   │                        │
-│                    │                 │                        │
-│                    │ ├── sendMessage │                        │
-│                    │ ├── editMessage │                        │
-│                    │ ├── react       │                        │
-│                    │ ├── typing      │                        │
-│                    │ └── getHistory  │                        │
-│                    └────────┬────────┘                        │
-│                             │                                │
-│                    ┌────────▼────────┐                        │
-│                    │ Message Router  │                        │
-│                    │                 │                        │
-│                    │ DM / Group /    │                        │
-│                    │ Thread routing  │                        │
-│                    │ Mention gating  │                        │
-│                    └─────────────────┘                        │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                       Channel System                              │
+│         Dynamic plugin-based channel loading (31 extensions)      │
+│                                                                   │
+│  ┌─────────────── Core (src/channels/) ───────────────────────┐  │
+│  │  dock.ts         ── Channel registry interface              │  │
+│  │  plugins/index.ts ── Plugin loader & discovery              │  │
+│  │  registry.ts     ── Runtime registry with ordering          │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                   │
+│  ┌─── Extension Channels (extensions/) ───────────────────────┐  │
+│  │                                                             │  │
+│  │  Messaging:                                                 │  │
+│  │  ├── discord (discord.js)   ├── telegram (grammY)           │  │
+│  │  ├── slack (Bolt)           ├── whatsapp (Baileys)          │  │
+│  │  ├── signal                 ├── imessage (BlueBubbles)      │  │
+│  │  ├── googlechat             ├── msteams                     │  │
+│  │  ├── matrix                 ├── mattermost                  │  │
+│  │  ├── line                   ├── feishu (Lark)               │  │
+│  │  ├── tlon (Urbit)           ├── twitch                      │  │
+│  │  ├── nostr                  ├── nextcloud-talk              │  │
+│  │  ├── zalo                   └── lobster                     │  │
+│  │                                                             │  │
+│  │  Infrastructure:                                            │  │
+│  │  ├── voice-call             ├── diagnostics-otel            │  │
+│  │  ├── copilot-proxy          ├── llm-task                    │  │
+│  │  └── memory-core / memory-lancedb                           │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+│                                                                   │
+│  ┌─────────────── Channel Plugin API ─────────────────────────┐  │
+│  │  ├── sendText / sendMedia  ── Outbound messaging            │  │
+│  │  ├── editMessage           ── Message editing               │  │
+│  │  ├── react                 ── Emoji reactions               │  │
+│  │  ├── typing                ── Typing indicators             │  │
+│  │  ├── pairing               ── DM access pairing flow        │  │
+│  │  ├── onboarding            ── Channel setup wizard          │  │
+│  │  └── probeAccount          ── Health check & validation     │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+│                                                                   │
+│  ┌─────────────── Message Routing ────────────────────────────┐  │
+│  │  ├── Agent binding (channel → agent routing)                │  │
+│  │  ├── DM / Group / Thread / Topic routing                    │  │
+│  │  ├── Mention gating & access control                        │  │
+│  │  └── Per-group/per-topic agent override                     │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## 9. Hệ thống Configuration (Cấu hình)
@@ -402,20 +411,34 @@ Incoming Message (from Channel)
 │  └──────────────────────────────────────────────────────┘   │
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │              Config Sections                          │   │
+│  │          Config Sections (32 top-level keys)         │   │
 │  │                                                       │   │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐    │   │
-│  │  │ agents  │ │ models  │ │  tools  │ │channels │    │   │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘    │   │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐    │   │
-│  │  │ session │ │ plugins │ │  hooks  │ │ memory  │    │   │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘    │   │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐    │   │
-│  │  │ browser │ │ gateway │ │ sandbox │ │ logging │    │   │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘    │   │
+│  │  Core:                                                │   │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────┐        │   │
+│  │  │ agents │ │ models │ │ tools  │ │channels │        │   │
+│  │  └────────┘ └────────┘ └────────┘ └─────────┘        │   │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────┐        │   │
+│  │  │session │ │plugins │ │ hooks  │ │ memory  │        │   │
+│  │  └────────┘ └────────┘ └────────┘ └─────────┘        │   │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────┐        │   │
+│  │  │browser │ │gateway │ │ skills │ │  cron   │        │   │
+│  │  └────────┘ └────────┘ └────────┘ └─────────┘        │   │
+│  │                                                       │   │
+│  │  Infrastructure:                                      │   │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────┐        │   │
+│  │  │logging │ │  auth  │ │ update │ │  media  │        │   │
+│  │  └────────┘ └────────┘ └────────┘ └─────────┘        │   │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────┐        │   │
+│  │  │  talk  │ │  web   │ │  meta  │ │   env   │        │   │
+│  │  └────────┘ └────────┘ └────────┘ └─────────┘        │   │
+│  │  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │   │
+│  │  │bindings │ │broadcast │ │approvals │ │discovery │  │   │
+│  │  └─────────┘ └──────────┘ └──────────┘ └──────────┘  │   │
+│  │  + ui, audio, commands, messages, nodeHost,           │   │
+│  │    canvasHost, diagnostics, wizard                    │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                             │
-│  Type Definitions: 30+ modular type files                   │
+│  Type Definitions: 29 modular type files                    │
 │  types.agents.ts, types.channels.ts, types.tools.ts, ...    │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -424,10 +447,10 @@ Incoming Message (from Channel)
 
 ```
 openclaw/
-├── src/                              # Source code chính
-│   ├── index.ts                      # Entry point export
-│   ├── entry.ts                      # CLI bootstrapping
-│   ├── agents/                       # Hệ thống Agent (core)
+├── src/                              # Source code chính (52 thư mục con)
+│   ├── index.ts                      # Entry point + public API exports
+│   ├── entry.ts                      # CLI bootstrapping & respawn
+│   ├── agents/                       # Hệ thống Agent (core, 259+ files)
 │   │   ├── agent-scope.ts            # Agent ID, config, workspace
 │   │   ├── pi-tools.ts              # Tool creation & registration
 │   │   ├── pi-tools.policy.ts       # Tool policy engine
@@ -436,42 +459,75 @@ openclaw/
 │   │   ├── system-prompt.ts         # System prompt builder
 │   │   ├── subagent-registry.ts     # Sub-agent lifecycle
 │   │   ├── subagent-announce.ts     # Sub-agent notifications
-│   │   └── skills/                  # Skill loader
-│   ├── config/                       # Configuration system
+│   │   ├── tools/                   # Tool implementations
+│   │   │   └── sessions-spawn-tool.ts
+│   │   └── skills/                  # Skill loader & installation
+│   ├── config/                       # Configuration system (80+ files)
 │   │   ├── config.ts                # Main config loader
-│   │   ├── types.ts                 # Root type definitions
-│   │   ├── zod-schema.ts            # Validation schema
-│   │   └── types.*.ts               # Modular type files (30+)
-│   ├── gateway/                      # WebSocket gateway server
-│   │   ├── server.impl.ts           # Main server implementation
-│   │   ├── server/                  # Sub-handlers
+│   │   ├── io.ts                    # Config I/O
+│   │   ├── paths.ts                 # Config path resolution
+│   │   ├── schema.ts                # Master schema (55K lines)
+│   │   ├── zod-schema.ts            # Zod validation (32 top-level keys)
+│   │   ├── zod-schema.providers*.ts # Provider-specific schemas
+│   │   ├── types.openclaw.ts        # Root OpenClawConfig type
+│   │   └── types.*.ts               # 29 modular type files
+│   ├── gateway/                      # Gateway server
+│   │   ├── server.impl.ts           # Main implementation (21K lines)
+│   │   ├── server/                  # WS, TLS, health, plugin HTTP
 │   │   ├── client.ts                # Client management
 │   │   ├── call.ts                  # API dispatcher
-│   │   ├── auth.ts                  # Authentication
-│   │   └── session-utils.ts         # Session CRUD
-│   ├── channels/                     # Messaging channels
-│   │   ├── whatsapp/                # WhatsApp (Baileys)
-│   │   ├── telegram/                # Telegram (grammY)
-│   │   ├── slack/                   # Slack (Bolt)
-│   │   ├── discord/                 # Discord (discord.js)
-│   │   ├── signal/                  # Signal
-│   │   ├── imessage/                # iMessage (BlueBubbles)
-│   │   ├── msteams/                 # Microsoft Teams
-│   │   └── googlechat/              # Google Chat
-│   ├── acp/                          # Agent Client Protocol
-│   ├── plugins/                      # Plugin system
-│   ├── hooks/                        # Hook system
+│   │   └── auth.ts                  # Authentication
+│   ├── channels/                     # Channel system (dynamic loading)
+│   │   ├── dock.ts                  # Channel registry interface
+│   │   ├── plugins/index.ts         # Plugin-based channel loader
+│   │   └── registry.ts             # Runtime registry
+│   ├── acp/                          # Agent Control Protocol (13 files)
+│   ├── plugins/                      # Plugin system (36+ files)
+│   ├── plugin-sdk/                   # Plugin SDK (12K+ lines)
+│   ├── hooks/                        # Hook system (14K lines)
 │   ├── sessions/                     # Session management
 │   ├── routing/                      # Message routing
-│   ├── memory/                       # Memory system
+│   ├── memory/                       # Memory system (builtin + QMD)
 │   ├── media-understanding/          # Media analysis
-│   ├── cli/                          # CLI infrastructure
-│   ├── commands/                     # CLI commands
-│   └── infra/                        # Infrastructure utils
-├── skills/                           # 54 built-in skills
-├── extensions/                       # Channel extensions
-├── packages/                         # NPM workspaces
-├── apps/                             # Desktop/mobile apps
+│   ├── cli/                          # CLI infrastructure (250+ files)
+│   ├── commands/                     # CLI commands (260+ files)
+│   │   ├── agent/                   # Agent management
+│   │   ├── channels/                # Channel management
+│   │   ├── gateway-status/          # Gateway status
+│   │   ├── models/                  # Model management
+│   │   └── onboarding/              # Setup wizard
+│   └── infra/                        # Infrastructure utils (40+ files)
+├── extensions/                       # 31 extension packages
+│   ├── discord/                     # Discord (discord.js)
+│   ├── telegram/                    # Telegram (grammY)
+│   ├── slack/                       # Slack (Bolt)
+│   ├── whatsapp/                    # WhatsApp (Baileys)
+│   ├── signal/                      # Signal
+│   ├── imessage/ + bluebubbles/     # iMessage
+│   ├── matrix/                      # Matrix protocol
+│   ├── zalo/                        # Zalo Bot API
+│   ├── msteams/                     # Microsoft Teams
+│   ├── googlechat/                  # Google Chat
+│   ├── mattermost/                  # Mattermost
+│   ├── feishu/                      # Feishu/Lark
+│   ├── line/                        # LINE
+│   ├── tlon/                        # Tlon/Urbit
+│   ├── twitch/                      # Twitch
+│   ├── nostr/                       # Nostr protocol
+│   ├── voice-call/                  # Voice call capability
+│   ├── copilot-proxy/               # GitHub Copilot proxy
+│   ├── diagnostics-otel/            # OpenTelemetry diagnostics
+│   ├── memory-core/ + memory-lancedb/ # Memory backends
+│   └── ...                          # + lobster, llm-task, etc.
+├── skills/                           # 53 built-in skills
+├── packages/                         # NPM workspaces (clawdbot, moltbot)
+├── apps/                             # Native apps
+│   ├── android/                     # Android (Gradle)
+│   ├── ios/                         # iOS (Swift/Xcode)
+│   ├── macos/                       # macOS (Swift/Xcode)
+│   └── shared/                      # Shared OpenClawKit
 ├── docs/                             # Documentation
+├── test/                             # Tests (vitest)
+├── scripts/                          # Build & CI scripts
 └── openclaw.mjs                      # CLI binary entry point
 ```
